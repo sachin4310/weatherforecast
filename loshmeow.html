@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Centralized Weather Visualization System</title>
+<style>
+:root{--bg:#F5EBDD;--panel:#fff;--ink:#3b2412;--brown:#f77f0e;--tan:#D2B48C;--muted:#8a6f58;--low:#6B8E23;--med:#E0A100;--high:#B22222;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media(prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#241a12;--panel:#33261b;--ink:#f5ebdd;--brown:#8b5a36;--tan:#a98763;--muted:#c9ad92}}
+:root[data-theme="dark"]{--bg:#241a12;--panel:#33261b;--ink:#f5ebdd;--brown:#8b5a36;--tan:#a98763;--muted:#c9ad92}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:"Segoe UI",system-ui,sans-serif}
+header{background:var(--brown);color:#F5EBDD;padding:14px 20px;display:flex;flex-wrap:wrap;gap:10px;justify-content:space-between;align-items:center}
+header h1{font-size:18px;margin:0}nav button{background:none;border:0;color:#F5EBDD;font-size:15px;padding:6px 12px;cursor:pointer;border-radius:6px}
+nav button.on{background:rgba(255,255,255,.2)}
+main{padding:18px 20px;max-width:1100px;margin:auto}
+.search{display:flex;gap:8px;margin-bottom:14px}
+select,input{padding:10px;border:1px solid var(--tan);border-radius:6px;background:var(--panel);color:var(--ink);font-size:15px}
+input{flex:1;max-width:280px}
+button.go{padding:10px 18px;background:var(--brown);color:#e8ebe5;border:0;border-radius:6px;cursor:pointer}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px}
+.card,.panel{background:var(--panel);border-radius:10px;padding:14px;box-shadow:0 2px 6px rgba(0,0,0,.1)}
+.card span{font-size:13px;color:var(--muted)}.card h2{margin:4px 0 0;font-size:28px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.panel h3{margin:0 0 10px;font-size:16px}
+.chartbox{position:relative;height:260px}
+.alert{padding:10px 14px;border-radius:6px;color:#fff;margin-bottom:8px;font-size:14px}
+.alert.low{background:var(--low)}.alert.medium{background:var(--med);color:#222}.alert.high{background:var(--high)}
+.ok{padding:10px 14px;border-radius:6px;background:var(--panel);margin-bottom:8px;font-size:14px;color:var(--muted)}
+svg{width:100%;height:auto;display:block}.land{fill:var(--tan);opacity:.45;stroke:var(--brown);stroke-width:1}
+.dot{cursor:pointer;fill:var(--brown);stroke:#fff;stroke-width:1.5}.dot.sel{fill:var(--high)}
+.lbl{font-size:9px;fill:var(--ink)}
+.note{font-size:12px;color:var(--muted);margin-top:14px}
+form.sub{display:flex;flex-wrap:wrap;gap:8px}
+.hidden{display:none}
+@media(max-width:700px){.grid{grid-template-columns:1fr}}
+</style></head><body>
+<header><h1>⛅ Centralized Weather Visualization</h1>
+<nav><button id="t-dash" class="on">Dashboard</button><button id="t-hist">History</button><button id="t-alert">Alerts</button></nav></header>
+<main>
+<div class="search"><select id="city"></select><button class="go" id="refresh">Refresh</button></div>
+
+<section id="dash">
+<div id="alerts"></div>
+<div class="cards">
+<div class="card"><span>Temperature</span><h2 id="temp">--</h2></div>
+<div class="card"><span>Humidity</span><h2 id="hum">--</h2></div>
+<div class="card"><span>Wind</span><h2 id="wind">--</h2></div>
+<div class="card"><span>Rain today</span><h2 id="rain">--</h2></div>
+</div>
+<div class="grid">
+<div class="panel"><h3>Weather Map (click a city)</h3><svg id="map" viewBox="0 0 300 310"></svg></div>
+<div class="panel"><h3>7-Day Forecast</h3><div class="chartbox"><canvas id="fc"></canvas></div></div>
+</div></section>
+
+<section id="hist" class="hidden">
+<div class="grid">
+<div class="panel"><h3>Monthly Temperature Trend (2026)</h3><div class="chartbox"><canvas id="trend"></canvas></div></div>
+<div class="panel"><h3>Yearly Comparison (avg °C)</h3><div class="chartbox"><canvas id="yearly"></canvas></div></div>
+</div></section>
+
+<section id="alertsec" class="hidden">
+<div class="panel"><h3>Active alerts across all locations</h3><div id="allalerts"></div></div>
+<div class="panel" style="margin-top:14px"><h3>Subscribe to alerts</h3>
+<form class="sub" onsubmit="return false"><input id="email" type="email" placeholder="you@example.com">
+<select id="subcity"></select><button class="go" id="subbtn">Subscribe</button></form>
+<p id="submsg" class="note"></p></div></section>
+
+<p class="note">Demo build: figures are a built-in sample snapshot for 8 Indian cities (the hosted page cannot call live weather APIs). The Flask + Open-Meteo version supplies live data using the same layout and alert rules (≥35 °C medium, ≥40 °C or wind ≥50 km/h high).</p>
+</main>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script>
+const C={Chennai:[13.08,80.27,34,68,18,2],Mumbai:[19.07,72.88,31,78,22,8],Delhi:[28.61,77.21,41,35,14,0],Kolkata:[22.57,88.36,33,80,12,5],Bengaluru:[12.97,77.59,27,65,16,4],Hyderabad:[17.38,78.48,32,55,20,1],Jaipur:[26.91,75.79,36,30,55,0],Kochi:[9.93,76.27,30,84,15,12]};
+const names=Object.keys(C);
+const rnd=(s)=>{let x=Math.sin(s)*10000;return x-Math.floor(x)};
+const seed=n=>[...n].reduce((a,c)=>a+c.charCodeAt(0),0);
+const $=id=>document.getElementById(id);
+function alertsFor(n){const [, ,t,,w]=C[n],a=[];
+ if(t>=40)a.push(["high","Extreme heat warning"]);else if(t>=35)a.push(["medium","High temperature"]);
+ if(w>=50)a.push(["high","Strong wind warning"]);return a}
+function fc(n){const s=seed(n),b=C[n][2],d=[],mx=[],mn=[];const today=new Date(2026,8,29);
+ for(let i=0;i<7;i++){const t=new Date(today);t.setDate(t.getDate()+i);d.push(t.toLocaleDateString("en-GB",{day:"2-digit",month:"short"}));
+ const m=+(b+(rnd(s+i)-.5)*4).toFixed(1);mx.push(m);mn.push(+(m-6-rnd(s+i*3)*2).toFixed(1))}
+ return{d,mx,mn}}
+let charts={};
+function draw(id,cfg){if(charts[id])charts[id].destroy();charts[id]=new Chart($(id),cfg)}
+const opt={responsive:true,maintainAspectRatio:false};
+function sel(){return $("city").value}
+function render(){
+ const n=sel(),[,,t,h,w,r]=C[n];
+ $("temp").textContent=t+" °C";$("hum").textContent=h+" %";$("wind").textContent=w+" km/h";$("rain").textContent=r+" mm";
+ const a=alertsFor(n);
+ $("alerts").innerHTML=a.length?a.map(x=>`<div class="alert ${x[0]}">${n}: ${x[1]}</div>`).join(""):`<div class="ok">No active alerts for ${n}.</div>`;
+ map();
+ const f=fc(n);
+ draw("fc",{type:"line",data:{labels:f.d,datasets:[{label:"Max °C",data:f.mx,borderColor:"#8B4513",backgroundColor:"#8B4513",tension:.3},{label:"Min °C",data:f.mn,borderColor:"#D2B48C",backgroundColor:"#D2B48C",tension:.3}]},options:opt});
+ const s=seed(n),mo=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+ const tr=mo.map((_,i)=>+(t-5+5*Math.sin((i-1)*Math.PI/6)+rnd(s+i)*1.5).toFixed(1));
+ draw("trend",{type:"line",data:{labels:mo,datasets:[{label:n+" avg °C",data:tr,borderColor:"#8B4513",backgroundColor:"rgba(139,69,19,.2)",fill:true,tension:.3}]},options:opt});
+ const yr=[2023,2024,2025,2026].map((y,i)=>+(t-2+i*.4+rnd(s+y)).toFixed(1));
+ draw("yearly",{type:"bar",data:{labels:["2023","2024","2025","2026"],datasets:[{label:n+" avg °C",data:yr,backgroundColor:["#D2B48C","#B08968","#8B5A36","#5C3A21"]}]},options:opt});
+}
+function map(){
+ const P=[[68.2,23.7],[70,21],[72.8,19],[73.8,15.5],[74.8,12.5],[76.3,9],[77.5,8.1],[78.5,9.3],[80.3,13],[80.2,15.5],[82.3,17],[85,19.8],[87,21.5],[88.5,22],[89,26],[92,26.5],[96,28],[95,29],[92,27.5],[88.8,27.5],[84,28.5],[80,30.3],[79,32.5],[78,35.5],[75,34.5],[74,32.5],[74.5,31],[72,29.5],[70,28],[71,25]];
+ const X=lo=>(lo-67)*10,Y=la=>(37-la)*8.4;
+ let h=`<polygon class="land" points="${P.map(p=>X(p[0])+","+Y(p[1])).join(" ")}"/>`;
+ names.forEach(n=>{const [la,lo,t]=C[n];const x=X(lo),y=Y(la);
+  h+=`<circle class="dot ${n===sel()?"sel":""}" data-c="${n}" cx="${x}" cy="${y}" r="${n===sel()?7:5}"><title>${n}: ${t} °C</title></circle><text class="lbl" x="${x+8}" y="${y+3}">${n} ${t}°</text>`});
+ $("map").innerHTML=h;
+ $("map").querySelectorAll(".dot").forEach(d=>d.onclick=()=>{$("city").value=d.dataset.c;render()});
+}
+function allAlerts(){
+ const rows=names.flatMap(n=>alertsFor(n).map(a=>`<div class="alert ${a[0]}">${n} — ${a[1]} (${a[0]})</div>`));
+ $("allalerts").innerHTML=rows.join("")||'<div class="ok">No active alerts.</div>'}
+names.forEach(n=>{$("city").add(new Option(n,n));$("subcity").add(new Option(n,n))});
+$("city").onchange=render;$("refresh").onclick=render;
+const tabs={dash:"t-dash",hist:"t-hist",alertsec:"t-alert"};
+Object.entries(tabs).forEach(([s,b])=>$(b).onclick=()=>{
+ Object.entries(tabs).forEach(([s2,b2])=>{$(s2).classList.toggle("hidden",s2!==s);$(b2).classList.toggle("on",s2===s)});
+ $("city").parentElement.classList.toggle("hidden",s==="alertsec");render();allAlerts()});
+$("subbtn").onclick=()=>{const e=$("email").value.trim();
+ $("submsg").textContent=/^\S+@\S+\.\S+$/.test(e)?`Subscribed ${e} to alerts for ${$("subcity").value} (demo only, nothing is stored).`:"Please enter a valid email."};
+render();allAlerts();
+</script></body></html>
